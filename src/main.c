@@ -28,7 +28,7 @@ void usage() {
   printf("Usage: poretrim [options]\n");
   printf("Options:\n");
   printf("  -r: Read FASTA/Q[.gz]\n");
-  printf("  -o: Output prefix\n");
+  printf("  -o: Output FASTA/Q\n");
   printf("  -v, --verbose: verbose\n");
   printf("  -h, --help: show this\n");
   printf("  --version: show version information\n");
@@ -70,7 +70,7 @@ char* rc(char* s, int l, char compl[256]) {
 int main(int argc, char *argv[]) {
   int verbose = 0;
   char* read_fasta;
-  char* output_prefix;
+  char* out_fasta;
 
   int opt, long_idx;
   opterr = 0;
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
         read_fasta = optarg;
         break;
       case 'o':
-        output_prefix = optarg;
+        out_fasta = optarg;
         break;
       case 'v':
         verbose = 1;
@@ -114,15 +114,15 @@ int main(int argc, char *argv[]) {
     usage();
     return 1;
   }
-  if(output_prefix == NULL) {
-    fprintf(stderr, "-o output prefix is required\n");
+  if(out_fasta == NULL) {
+    fprintf(stderr, "-o output file is required\n");
     usage();
     return 1;
   }
 
   // load FASTA file
 
-  FILE* fp;
+  FILE *fp, *fout;
   kseq_t* seq;
   int i, l;
   char *adapter_seq, *rc_adapter_seq;
@@ -145,6 +145,19 @@ int main(int argc, char *argv[]) {
   fp = fopen(read_fasta, "r");
   seq = kseq_init(fp);
   printf("Reading fasta file: %s\n", read_fasta);
+
+  // create and fill in invariant parts of RBK
+  adapter_seq = malloc(sizeof(char) * (RBK004_pre_l + RBK004_bc_l + RBK004_post_l + 1));
+  for(i = 0; i < RBK004_pre_l; i++) adapter_seq[i] = RBK004_pre[i];
+  for(i = 0; i < RBK004_post_l; i++) adapter_seq[i+RBK004_pre_l+RBK004_bc_l] = RBK004_post[i];
+  adapter_seq[RBK004_pre_l + RBK004_bc_l + RBK004_post_l] = '\0';
+
+  char* padded_prefix = malloc((SEQPREFIX+1) * sizeof(char));
+  padded_prefix[SEQPREFIX] = '\0';
+
+  fout = fopen(out_fasta, "w");
+
+  int n = 0;
 
   while ((l = kseq_read(seq)) >= 0) {
     // name: seq->name.s, seq: seq->seq.s, length: l
@@ -182,6 +195,11 @@ int main(int argc, char *argv[]) {
     free(adapter_seq);
     */
 
+    int max_start_pos = 50;
+    int min_score = 30;
+    int min_bc_delta = 5;
+    int aln_lim = 200;
+
     int bc, best_bc;
     int scores[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
     int positions[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
@@ -191,11 +209,7 @@ int main(int argc, char *argv[]) {
     int best = 0;
     for(bc = 1; bc <= 12; bc++) {
 
-      adapter_seq = malloc(sizeof(char) * (RBK004_pre_l + RBK004_bc_l + RBK004_post_l + 1));
-      for(i = 0; i < RBK004_pre_l; i++) adapter_seq[i] = RBK004_pre[i];
       for(i = 0; i < RBK004_bc_l; i++) adapter_seq[i+RBK004_pre_l] = RBK004_bcs[bc-1][i];
-      for(i = 0; i < RBK004_post_l; i++) adapter_seq[i+RBK004_pre_l+RBK004_bc_l] = RBK004_post[i];
-      adapter_seq[RBK004_pre_l + RBK004_bc_l + RBK004_post_l] = '\0';
       //rc_adapter_seq = rc(adapter_seq, RBK004_pre_l + RBK004_bc_l + RBK004_post_l, compl);
 
       /*
@@ -209,10 +223,11 @@ int main(int argc, char *argv[]) {
       align_destroy(a);
       */
 
-      charvec path;
-      kv_init(path);
-      //result r = align_full_matrix(adapter_seq, seq->seq.s, RBK004_pre_l+RBK004_bc_l+RBK004_post_l, l, &path, 0, 1, -1, -1, -1);
-      result r = align_full_matrix(adapter_seq, seq->seq.s, RBK004_pre_l+RBK004_bc_l+RBK004_post_l, l, &path, 0, 1, -2, -1, -1); // semilocal
+      //charvec path;
+      //kv_init(path);
+      //send &path to align... to compute path
+      result r = align_full_matrix(adapter_seq, seq->seq.s, RBK004_pre_l+RBK004_bc_l+RBK004_post_l, (aln_lim < l ? aln_lim : l), NULL, 0, 1, -1, -1, -1);
+      //result r = align_full_matrix(rc_adapter_seq, seq->seq.s, RBK004_pre_l+RBK004_bc_l+RBK004_post_l, l, &path, 0, 1, -1, -1, -1); // semilocal
       if(r.failed) {
         fprintf(stderr, "alignment failed\n");
         continue;
@@ -228,6 +243,8 @@ int main(int argc, char *argv[]) {
         delta = max - r.score;
       }
       //fprintf(stderr, "RBK004 barcode %d (%d:%d) aligned to %s (%d:%d) of %d with score %u\n", bc, r.qstart, r.qend, seq->name.s, r.tstart, r.tend, l, r.score);
+      //
+      /*
       int q = r.qstart;
       int t = r.tstart;
       char* qstr = malloc((kv_size(path) + 1) * sizeof(char));
@@ -257,40 +274,55 @@ int main(int argc, char *argv[]) {
           astr[i] = '*';
         }
       }
-      //fprintf(stderr, "\n");
-      /*
+      fprintf(stderr, "\n");
       fprintf(stderr, "q: %s\n", qstr);
       fprintf(stderr, "   %s\n", astr);
       fprintf(stderr, "t: %s\n", tstr);
       */
 
-      free(adapter_seq);
+      //kv_destroy(path);
     }
-    fprintf(stderr, "%s\n", seq->name.s);
-    fprintf(stderr, "score (position): ");
-    for(i = 0; i < 12; i++) {
-      if(i > 0) {
-        fprintf(stderr, ", ");
+    if(verbose) {
+      fprintf(stderr, "%s\n", seq->name.s);
+      fprintf(stderr, "score (position): ");
+      for(i = 0; i < 12; i++) {
+        if(i > 0) {
+          fprintf(stderr, ", ");
+        }
+        fprintf(stderr, "%d (%d)", scores[i], positions[i]);
       }
-      fprintf(stderr, "%d (%d)", scores[i], positions[i]);
-    }
-    fprintf(stderr, "\n");
-    fprintf(stderr, "max: %d, delta: %d\n", max, delta);
+      fprintf(stderr, "\n");
+      fprintf(stderr, "max: %d, delta: %d\n", max, delta);
     
-    char* padded_prefix = malloc((SEQPREFIX+1) * sizeof(char));
-    for(i = 0; i < SEQPREFIX-positions[best_bc-1]; i++) {
-      padded_prefix[i] = ' ';
+      for(i = 0; i < SEQPREFIX-positions[best_bc-1]; i++) {
+        padded_prefix[i] = ' ';
+      }
+      for(; i < SEQPREFIX; i++) {
+        padded_prefix[i] = seq->seq.s[positions[best_bc-1] - (SEQPREFIX-i)];
+      }
+      fprintf(stderr, "%s", padded_prefix);
+      char tmp = seq->seq.s[end_positions[best_bc-1]+1];
+      seq->seq.s[end_positions[best_bc-1]] = '\0';
+      fprintf(stderr, " %s", seq->seq.s + positions[best_bc-1]);
+      seq->seq.s[end_positions[best_bc-1]] = tmp;
+      fprintf(stderr, "\n");
     }
-    for(; i < SEQPREFIX; i++) {
-      padded_prefix[i] = seq->seq.s[positions[best_bc-1] - (SEQPREFIX-i)];
+
+    if(n % 1000 == 0) {
+      fprintf(stderr, "%d reads done.\n", n);
     }
-    padded_prefix[i] = '\0';
-    fprintf(stderr, "%s", padded_prefix);
-    char tmp = seq->seq.s[end_positions[best_bc-1]+1];
-    seq->seq.s[end_positions[best_bc-1]+1] = '\0';
-    fprintf(stderr, " %s", seq->seq.s + positions[best_bc-1]);
-    seq->seq.s[end_positions[best_bc-1]+1] = tmp;
-    fprintf(stderr, "\n");
+
+    if(max >= min_score && delta >= min_bc_delta && positions[best_bc-1] <= max_start_pos) {
+      fprintf(fout, "@bc%d_%s %s\n", best_bc, seq->name.s, seq->comment.s);
+      fprintf(fout, "%s\n", seq->seq.s+end_positions[best_bc-1]);
+      fprintf(fout, "+\n");
+      fprintf(fout, "%s\n", seq->qual.s+end_positions[best_bc-1]);
+    } else {
+      fprintf(fout, "@unassigned_%s %s\n", seq->name.s, seq->comment.s);
+      fprintf(fout, "%s\n", seq->seq.s);
+      fprintf(fout, "+\n");
+      fprintf(fout, "%s\n", seq->qual.s);
+    }
 
     /*!	@typedef	structure of the alignment result
       typedef struct {
@@ -308,8 +340,13 @@ int main(int argc, char *argv[]) {
 
     // automatically detect experiment type (expected adapters, barcodes)
     // demultiplex (liberally), trim adapters (and barcodes), split reads with middle adapters
+
+    n++;
   }
 
   kseq_destroy(seq);
   fclose(fp);
+  fclose(fout);
+  free(adapter_seq);
+  free(padded_prefix);
 }

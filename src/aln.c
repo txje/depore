@@ -95,7 +95,8 @@ result align_full_matrix(char* query, char* target, int qlen, int tlen, charvec 
   y = max_y;
   int lastx, lasty;
   while(x >= 0 && y >= 0) {
-    kv_push(char, *path, direction_matrix[y][x]);
+    if(path != NULL)
+      kv_push(char, *path, direction_matrix[y][x]);
     lastx = x;
     lasty = y;
     if(direction_matrix[y][x] == MATCH || direction_matrix[y][x] == MISMATCH) {
@@ -109,11 +110,13 @@ result align_full_matrix(char* query, char* target, int qlen, int tlen, charvec 
   }
   
   //invert the path, since we added it in reverse order
-  char tmp;
-  for(i = 0; i < kv_size(*path)/2; i++) {
-    tmp = kv_A(*path, i);
-    kv_A(*path, i) = kv_A(*path, kv_size(*path)-1-i);
-    kv_A(*path, kv_size(*path)-1-i) = tmp;
+  if(path != NULL) {
+    char tmp;
+    for(i = 0; i < kv_size(*path)/2; i++) {
+      tmp = kv_A(*path, i);
+      kv_A(*path, i) = kv_A(*path, kv_size(*path)-1-i);
+      kv_A(*path, kv_size(*path)-1-i) = tmp;
+    }
   }
 
   result res;
