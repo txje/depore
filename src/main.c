@@ -5,9 +5,7 @@
 #include <string.h>
 
 #include "../incl/klib/kseq.h"
-#include "ssw.h"
 #include "adapters.h"
-#include "ssw_write.c"
 #include "aln.h"
 
 #define SEQPREFIX 50
@@ -68,42 +66,6 @@ char* rc(char* s, int l, char compl[256]) {
 
 
 // porechop default: match = 3, mismatch = -6, gap open = -5, gap extend = -2
-s_align* align(char* ref_seq, char* read_seq, int ref_len, int read_len) {
-  int32_t l, m, k, match = 3, mismatch = -5, gap_open = -1, gap_extension = -1;  // default parameters for genome sequence alignment
-  s_profile* profile;
-  int8_t* num = (int8_t*)malloc(read_len);  // the read sequence represented in numbers
-  int8_t* ref_num = (int8_t*)malloc(ref_len);
-  s_align* result;
-
-  // initialize scoring matrix for genome sequences
-  //  A  C  G  T  N (or other ambiguous code)
-  //  3 -6 -6 -6  0 A
-  // -6  3 -6 -6  0 C
-  // -6 -6  3 -6  0 G
-  // -6 -6 -6  3  0 T
-  //  0  0  0  0  0 N (or other ambiguous code)
-  int8_t* mat = (int8_t*)calloc(25, sizeof(int8_t));
-  for (l = k = 0; l < 4; ++l) {
-    for (m = 0; m < 4; ++m)
-      mat[k++] = l == m ? match : mismatch;
-    mat[k++] = 0; // ambiguous base: no penalty
-  }
-  for (m = 0; m < 5; ++m) mat[k++] = 0;
-
-  for (m = 0; m < read_len; ++m) num[m] = nt_table[(int)read_seq[m]];
-  profile = ssw_init(num, read_len, mat, 5, 2);
-  for (m = 0; m < ref_len; ++m) ref_num[m] = nt_table[(int)ref_seq[m]];
-
-  // Only the 8 bit of the flag is set. ssw_align will always return the best alignment beginning position and cigar.
-  result = ssw_align(profile, ref_num, ref_len, gap_open, gap_extension, 1, 0, 0, read_len);
-
-  init_destroy(profile);
-  free(mat);
-  free(ref_num);
-  free(num);
-  return result;
-}
-
 
 int main(int argc, char *argv[]) {
   int verbose = 0;
@@ -311,7 +273,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "\n");
     fprintf(stderr, "max: %d, delta: %d\n", max, delta);
     
-    fprintf(stderr, "%s%s", pad, prefix);
+    //fprintf(stderr, "%s%s", pad, prefix);
 
     /*!	@typedef	structure of the alignment result
       typedef struct {
