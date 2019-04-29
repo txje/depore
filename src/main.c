@@ -182,11 +182,13 @@ int main(int argc, char *argv[]) {
     free(adapter_seq);
     */
 
-    int bc;
+    int bc, best_bc;
     int scores[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
     int positions[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+    int end_positions[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
     int max = 0;
     int delta = 0;
+    int best = 0;
     for(bc = 1; bc <= 12; bc++) {
 
       adapter_seq = malloc(sizeof(char) * (RBK004_pre_l + RBK004_bc_l + RBK004_post_l + 1));
@@ -217,9 +219,11 @@ int main(int argc, char *argv[]) {
       }
       scores[bc-1] = r.score;
       positions[bc-1] = r.tstart;
+      end_positions[bc-1] = r.tend;
       if(r.score > max) {
         delta = r.score - max;
         max = r.score;
+	best_bc = bc;
       } else if(max - r.score < delta) {
         delta = max - r.score;
       }
@@ -273,7 +277,20 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "\n");
     fprintf(stderr, "max: %d, delta: %d\n", max, delta);
     
-    //fprintf(stderr, "%s%s", pad, prefix);
+    char* padded_prefix = malloc((SEQPREFIX+1) * sizeof(char));
+    for(i = 0; i < SEQPREFIX-positions[best_bc-1]; i++) {
+      padded_prefix[i] = ' ';
+    }
+    for(; i < SEQPREFIX; i++) {
+      padded_prefix[i] = seq->seq.s[positions[best_bc-1] - (SEQPREFIX-i)];
+    }
+    padded_prefix[i] = '\0';
+    fprintf(stderr, "%s", padded_prefix);
+    char tmp = seq->seq.s[end_positions[best_bc-1]+1];
+    seq->seq.s[end_positions[best_bc-1]+1] = '\0';
+    fprintf(stderr, " %s", seq->seq.s + positions[best_bc-1]);
+    seq->seq.s[end_positions[best_bc-1]+1] = tmp;
+    fprintf(stderr, "\n");
 
     /*!	@typedef	structure of the alignment result
       typedef struct {
